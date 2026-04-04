@@ -57,7 +57,7 @@ body{font-family:'DM Sans',sans-serif;background:var(--bg);color:var(--text);ove
 .btn-logout:hover{color:var(--danger);}
 
 /* ── MAIN CONTENT ── */
-.main-content{margin-left:240px;min-height:100vh;}
+.main-content{margin-left:240px;min-height:100vh;width:calc(100% - 240px);overflow-x:auto;}
 .topbar{background:var(--surface);border-bottom:1px solid var(--border);padding:1rem 2rem;display:flex;align-items:center;justify-content:space-between;position:sticky;top:0;z-index:50;}
 .page-title{font-family:'Syne',sans-serif;font-weight:700;font-size:1.1rem;}
 .topbar-right{display:flex;align-items:center;gap:1rem;}
@@ -66,7 +66,7 @@ body{font-family:'DM Sans',sans-serif;background:var(--bg);color:var(--text);ove
 @keyframes blink{0%,100%{opacity:1}50%{opacity:.3}}
 
 /* ── PAGES ── */
-.page{display:none;padding:2rem;}
+.page{display:none;padding:2rem;width:100%;box-sizing:border-box;}
 .page.active{display:block;}
 
 /* ── STATS GRID ── */
