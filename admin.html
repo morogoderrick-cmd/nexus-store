@@ -321,7 +321,7 @@ tr:hover td{background:rgba(124,106,247,.03);}
         <div><div class="form-group"><label class="form-label">Stock</label><input type="number" class="form-input" id="p-stock" placeholder="10"></div></div>
         <div><div class="form-group"><label class="form-label">Category *</label><select class="form-input" id="p-category"><option value="">Select category</option><option>Electronics</option><option>Cameras</option><option>Fashion</option><option>Sports</option><option>Beauty</option><option>Home & Office</option></select></div></div>
         <div><div class="form-group"><label class="form-label">Badge</label><select class="form-input" id="p-badge"><option value="">None</option><option>Hot</option><option>New</option><option>Sale</option></select></div></div>
-        <div class="full"><div class="form-group"><label class="form-label">Product Image</label><input type="file" class="form-input" id="p-image" accept="image/*" onchange="previewImg(this)"><img class="img-preview" id="img-preview"></div></div>
+        <div class="full"><div class="form-group"><label class="form-label">Product Image</label><input type="file" class="form-input" id="p-image" accept="image/*" onchange="previewImg(this)"><img class="img-preview" id="img-preview"><label class="form-label" style="margin-top:.6rem;">Or Image URL (leave blank to keep existing)</label><input type="text" class="form-input" id="p-imageurl" placeholder="https://..." oninput="previewImgUrl(this.value)"></div></div>
       </div>
       <button class="btn-save" id="save-btn" onclick="saveProduct()">💾 Save Product</button>
     </div>
@@ -352,6 +352,7 @@ tr:hover td{background:rgba(124,106,247,.03);}
 const API = 'https://nexus-store-api.onrender.com/api';
 let adminToken = localStorage.getItem('nexus_admin_token') || '';
 let editingProductId = null;
+let editingProductImage = '';
 let allProducts = [];
 let allOrders = [];
 let allUsers = [];
@@ -420,6 +421,7 @@ async function loadDashboard() {
   try {
     const r = await fetch(API + '/admin/dashboard', { headers: { Authorization: 'Bearer ' + adminToken } });
     if (r.status === 401) { doLogout(); return; }
+    if (!r.ok) throw new Error('Dashboard load failed (' + r.status + ')');
     const d = await r.json();
     document.getElementById('stat-revenue').textContent  = 'KES ' + ((d.stats && d.stats.totalRevenue) || 0).toLocaleString();
     document.getElementById('stat-orders').textContent   = (d.stats && d.stats.totalOrders)   || 0;
@@ -427,7 +429,7 @@ async function loadDashboard() {
     document.getElementById('stat-users').textContent    = (d.stats && d.stats.totalUsers)    || 0;
     renderChart(d.monthlyRevenue || []);
     renderRecentOrders(d.recentOrders || []);
-  } catch(e) { toast('Failed to load dashboard', 'error'); }
+  } catch(e) { toast('Failed to load dashboard: ' + e.message, 'error'); }
 }
 
 function renderChart(data) {
@@ -453,14 +455,19 @@ async function loadProducts() {
   document.getElementById('products-table').innerHTML = '<div class="loading"><div class="spinner"></div>Loading products...</div>';
   try {
     const r = await fetch(API + '/products?limit=100', { headers: { Authorization: 'Bearer ' + adminToken } });
-    if (!r.ok) throw new Error('Failed to load products');
+    if (r.status === 401) { doLogout(); return; }
+    if (!r.ok) throw new Error('Failed to load products (' + r.status + ')');
     const d = await r.json();
-    allProducts = d.products || d || [];
+    allProducts = Array.isArray(d) ? d : (d.products || d.data || []);
     renderProducts(allProducts);
   } catch(e) {
     document.getElementById('products-table').innerHTML = '<div class="empty"><div class="empty-icon">⚠️</div><div class="empty-text">' + e.message + '</div></div>';
-    toast('Failed to load products', 'error');
+    toast('Failed to load products: ' + e.message, 'error');
   }
+}
+
+function escHtml(str) {
+  return String(str||'').replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;').replace(/"/g,'&quot;').replace(/'/g,'&#39;');
 }
 
 function renderProducts(products) {
@@ -472,15 +479,15 @@ function renderProducts(products) {
   el.innerHTML = '<table><thead><tr><th>Image</th><th>Name</th><th>Category</th><th>Price</th><th>Stock</th><th>Badge</th><th>Actions</th></tr></thead><tbody>' +
     products.map(function(p) {
       return '<tr>' +
-        '<td><img class="td-img" src="' + (p.image||'') + '" onerror="this.style.opacity=\'0\'"></td>' +
-        '<td><div style="font-weight:600;font-size:.85rem">' + p.name + '</div></td>' +
-        '<td><span style="color:var(--muted);font-size:.78rem">' + (p.category||'-') + '</span></td>' +
+        '<td><img class="td-img" src="' + escHtml(p.image||'') + '" onerror="this.style.opacity=\'0\'"></td>' +
+        '<td><div style="font-weight:600;font-size:.85rem">' + escHtml(p.name) + '</div></td>' +
+        '<td><span style="color:var(--muted);font-size:.78rem">' + escHtml(p.category||'-') + '</span></td>' +
         '<td style="color:var(--accent);font-weight:700;white-space:nowrap">KES ' + (p.price||0).toLocaleString() + '</td>' +
         '<td><span style="color:' + ((p.stock||0)<10?'var(--danger)':'var(--text)') + ';font-weight:600">' + (p.stock||0) + '</span></td>' +
-        '<td>' + (p.badge ? '<span class="badge badge-' + p.badge.toLowerCase() + '">' + p.badge + '</span>' : '-') + '</td>' +
+        '<td>' + (p.badge ? '<span class="badge badge-' + escHtml(p.badge.toLowerCase()) + '">' + escHtml(p.badge) + '</span>' : '-') + '</td>' +
         '<td style="white-space:nowrap">' +
-          '<button class="btn-edit" onclick="editProduct(\'' + p._id + '\')">✏️ Edit</button> ' +
-          '<button class="btn-danger" onclick="deleteProduct(\'' + p._id + '\',\'' + p.name.replace(/'/g,"\\'") + '\')">🗑</button>' +
+          '<button class="btn-edit" onclick="editProduct(\'' + escHtml(p._id) + '\')">✏️ Edit</button> ' +
+          '<button class="btn-danger" onclick="deleteProduct(\'' + escHtml(p._id) + '\',this)">🗑</button>' +
         '</td>' +
       '</tr>';
     }).join('') + '</tbody></table>';
@@ -500,6 +507,7 @@ function filterProductsCat(cat) {
 
 function openProductModal(product) {
   editingProductId = product ? product._id : null;
+  editingProductImage = product ? (product.image || '') : '';
   document.getElementById('modal-title').textContent = product ? 'Edit Product' : 'Add Product';
   document.getElementById('p-name').value     = product ? product.name        : '';
   document.getElementById('p-desc').value     = product ? product.description : '';
@@ -508,6 +516,7 @@ function openProductModal(product) {
   document.getElementById('p-category').value = product ? product.category    : '';
   document.getElementById('p-badge').value    = product ? (product.badge||'') : '';
   document.getElementById('p-image').value    = '';
+  document.getElementById('p-imageurl').value = product ? (product.image||'') : '';
   const prev = document.getElementById('img-preview');
   if (product && product.image) { prev.src = product.image; prev.style.display = 'block'; }
   else { prev.style.display = 'none'; }
@@ -531,6 +540,12 @@ function previewImg(input) {
   reader.readAsDataURL(file);
 }
 
+function previewImgUrl(url) {
+  const prev = document.getElementById('img-preview');
+  if (url) { prev.src = url; prev.style.display = 'block'; }
+  else { prev.style.display = 'none'; }
+}
+
 async function saveProduct() {
   const name     = document.getElementById('p-name').value.trim();
   const desc     = document.getElementById('p-desc').value.trim();
@@ -539,7 +554,10 @@ async function saveProduct() {
   const category = document.getElementById('p-category').value;
   const badge    = document.getElementById('p-badge').value;
   const imageFile= document.getElementById('p-image').files[0];
+  const imageUrl = document.getElementById('p-imageurl').value.trim();
   if (!name || !desc || !price || !category) { toast('Please fill all required fields', 'error'); return; }
+  if (isNaN(price) || Number(price) <= 0) { toast('Price must be a positive number', 'error'); return; }
+  if (stock !== '' && (isNaN(stock) || Number(stock) < 0)) { toast('Stock must be 0 or more', 'error'); return; }
   const btn = document.getElementById('save-btn');
   btn.textContent = '⏳ Saving...'; btn.disabled = true;
   try {
@@ -550,7 +568,13 @@ async function saveProduct() {
     formData.append('stock', stock || 0);
     formData.append('category', category);
     formData.append('badge', badge);
-    if (imageFile) formData.append('image', imageFile);
+    if (imageFile) {
+      formData.append('image', imageFile);
+    } else if (imageUrl) {
+      formData.append('imageUrl', imageUrl);
+    } else if (editingProductId && editingProductImage) {
+      formData.append('imageUrl', editingProductImage);
+    }
     const url    = editingProductId ? API + '/products/' + editingProductId : API + '/products';
     const method = editingProductId ? 'PUT' : 'POST';
     const r = await fetch(url, { method: method, headers: { Authorization: 'Bearer ' + adminToken }, body: formData });
@@ -559,17 +583,26 @@ async function saveProduct() {
     toast(editingProductId ? '✅ Product updated!' : '✅ Product added!', 'success');
     closeModal('product-modal');
     loadProducts();
-  } catch(e) { toast(e.message || 'Save failed', 'error'); }
-  btn.textContent = '💾 Save Product'; btn.disabled = false;
+  } catch(e) {
+    toast(e.message || 'Save failed', 'error');
+  } finally {
+    btn.textContent = '💾 Save Product'; btn.disabled = false;
+  }
 }
 
-async function deleteProduct(id, name) {
-  if (!confirm('Delete "' + name + '"? This cannot be undone.')) return;
+async function deleteProduct(id, btnEl) {
+  const name = allProducts.find(function(p){ return p._id === id; });
+  const label = name ? name.name : 'this product';
+  if (!confirm('Delete "' + label + '"? This cannot be undone.')) return;
   try {
     const r = await fetch(API + '/products/' + id, { method:'DELETE', headers:{ Authorization:'Bearer ' + adminToken } });
-    if (!r.ok) throw new Error('Delete failed');
+    if (!r.ok) {
+      const d = await r.json().catch(function(){return{};});
+      throw new Error(d.message || 'Delete failed (status ' + r.status + ')');
+    }
+    allProducts = allProducts.filter(function(p){ return p._id !== id; });
+    renderProducts(allProducts);
     toast('🗑 Product deleted', 'success');
-    loadProducts();
   } catch(e) { toast(e.message, 'error'); }
 }
 
@@ -581,10 +614,15 @@ async function loadOrders(filters) {
     var url = API + '/admin/orders?limit=50';
     Object.keys(filters).forEach(function(k){ if(filters[k]) url += '&' + k + '=' + filters[k]; });
     const r = await fetch(url, { headers: { Authorization: 'Bearer ' + adminToken } });
+    if (r.status === 401) { doLogout(); return; }
+    if (!r.ok) throw new Error('Failed to load orders (' + r.status + ')');
     const d = await r.json();
-    allOrders = d.orders || [];
+    allOrders = d.orders || d.data || [];
     renderOrders(allOrders);
-  } catch(e) { toast('Failed to load orders', 'error'); }
+  } catch(e) {
+    document.getElementById('orders-table').innerHTML = '<div class="empty"><div class="empty-icon">⚠️</div><div class="empty-text">' + e.message + '</div></div>';
+    toast('Failed to load orders: ' + e.message, 'error');
+  }
 }
 
 function filterOrders(key, val) {
@@ -623,6 +661,8 @@ async function saveOrder() {
   const status  = document.getElementById('o-status').value;
   const payment = document.getElementById('o-payment').value;
   const notes   = document.getElementById('o-notes').value;
+  const btn     = document.querySelector('#order-modal .btn-save');
+  btn.textContent = '⏳ Saving...'; btn.disabled = true;
   try {
     const r = await fetch(API + '/admin/orders/' + id, {
       method: 'PATCH',
@@ -633,7 +673,11 @@ async function saveOrder() {
     toast('✅ Order updated!', 'success');
     closeModal('order-modal');
     loadOrders();
-  } catch(e) { toast(e.message, 'error'); }
+  } catch(e) {
+    toast(e.message, 'error');
+  } finally {
+    btn.textContent = '💾 Update Order'; btn.disabled = false;
+  }
 }
 
 // USERS
@@ -642,12 +686,17 @@ async function loadUsers(search) {
   document.getElementById('users-table').innerHTML = '<div class="loading"><div class="spinner"></div>Loading customers...</div>';
   try {
     var url = API + '/admin/users?limit=50';
-    if (search) url += '&search=' + search;
+    if (search) url += '&search=' + encodeURIComponent(search);
     const r = await fetch(url, { headers: { Authorization: 'Bearer ' + adminToken } });
+    if (r.status === 401) { doLogout(); return; }
+    if (!r.ok) throw new Error('Failed to load customers (' + r.status + ')');
     const d = await r.json();
-    allUsers = d.users || [];
+    allUsers = d.users || d.data || [];
     renderUsers(allUsers);
-  } catch(e) { toast('Failed to load customers', 'error'); }
+  } catch(e) {
+    document.getElementById('users-table').innerHTML = '<div class="empty"><div class="empty-icon">⚠️</div><div class="empty-text">' + e.message + '</div></div>';
+    toast('Failed to load customers: ' + e.message, 'error');
+  }
 }
 
 function searchUsers(q) {
@@ -661,22 +710,28 @@ function renderUsers(users) {
   el.innerHTML = '<table><thead><tr><th>Name</th><th>Email</th><th>Phone</th><th>Joined</th><th>Actions</th></tr></thead><tbody>' +
     users.map(function(u) {
       return '<tr>' +
-        '<td style="font-weight:600">' + u.name + '</td>' +
-        '<td style="color:var(--muted)">' + u.email + '</td>' +
-        '<td>' + (u.phone||'-') + '</td>' +
+        '<td style="font-weight:600">' + escHtml(u.name) + '</td>' +
+        '<td style="color:var(--muted)">' + escHtml(u.email) + '</td>' +
+        '<td>' + escHtml(u.phone||'-') + '</td>' +
         '<td style="font-size:.75rem;color:var(--muted);white-space:nowrap">' + new Date(u.createdAt).toLocaleDateString() + '</td>' +
-        '<td><button class="btn-danger" onclick="deleteUser(\'' + u._id + '\',\'' + u.name.replace(/'/g,"\\'") + '\')">🗑 Delete</button></td>' +
+        '<td><button class="btn-danger" onclick="deleteUser(\'' + escHtml(u._id) + '\')">🗑 Delete</button></td>' +
       '</tr>';
     }).join('') + '</tbody></table>';
 }
 
-async function deleteUser(id, name) {
+async function deleteUser(id) {
+  const u = allUsers.find(function(u){ return u._id === id; });
+  const name = u ? u.name : 'this customer';
   if (!confirm('Delete customer "' + name + '"? This cannot be undone.')) return;
   try {
     const r = await fetch(API + '/admin/users/' + id, { method:'DELETE', headers:{ Authorization:'Bearer ' + adminToken } });
-    if (!r.ok) throw new Error('Delete failed');
+    if (!r.ok) {
+      const d = await r.json().catch(function(){return{};});
+      throw new Error(d.message || 'Delete failed (status ' + r.status + ')');
+    }
+    allUsers = allUsers.filter(function(u){ return u._id !== id; });
+    renderUsers(allUsers);
     toast('✅ Customer deleted', 'success');
-    loadUsers();
   } catch(e) { toast(e.message, 'error'); }
 }
 
@@ -684,14 +739,15 @@ async function deleteUser(id, name) {
 async function exportData(type) {
   try {
     const r = await fetch(API + '/export/' + type, { headers: { Authorization: 'Bearer ' + adminToken } });
-    if (!r.ok) throw new Error('Export failed');
+    if (r.status === 401) { doLogout(); return; }
+    if (!r.ok) throw new Error('Export failed (' + r.status + ')');
     const blob = await r.blob();
     const url  = URL.createObjectURL(blob);
     const a    = document.createElement('a');
     a.href = url; a.download = 'nexus_' + type + '_' + Date.now() + '.csv'; a.click();
     URL.revokeObjectURL(url);
     toast('📥 Export downloaded!', 'success');
-  } catch(e) { toast('Export failed', 'error'); }
+  } catch(e) { toast('Export failed: ' + e.message, 'error'); }
 }
 
 // UTILS
