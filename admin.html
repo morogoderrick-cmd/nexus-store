@@ -166,6 +166,20 @@ tr:hover td{background:rgba(124,106,247,.03);}
 .toast.info{border-color:rgba(124,106,247,.4);color:var(--accent);}
 
 /* RESPONSIVE */
+.tag{display:inline-block;font-size:.65rem;font-weight:700;padding:.12rem .5rem;border-radius:99px;margin-left:.4rem;vertical-align:middle;white-space:nowrap}
+.tag-low{background:rgba(255,200,50,.15);color:var(--accent4)}
+.tag-out{background:rgba(255,71,87,.15);color:var(--danger)}
+.low-box{background:var(--card);border:1px solid rgba(255,200,50,.35);border-radius:var(--r);padding:1rem 1.2rem;margin-bottom:1rem}
+.low-box.ok{border-color:var(--border)}
+.low-item{display:flex;justify-content:space-between;align-items:center;gap:.8rem;padding:.45rem 0;font-size:.84rem;cursor:pointer}
+.low-item+.low-item{border-top:1px solid var(--border)}
+.low-item:hover .low-name{color:var(--accent)}
+.btn-ghost{background:var(--surface2);border:1px solid var(--border);color:var(--muted);padding:.35rem .6rem;border-radius:var(--rsm);cursor:pointer;font:.78rem 'DM Sans',sans-serif;transition:all .2s}
+.btn-ghost:hover{color:var(--text);border-color:var(--muted)}
+.btn-wa{background:rgba(37,211,102,.1);border:1px solid rgba(37,211,102,.3);color:#25d366;padding:.35rem .6rem;border-radius:var(--rsm);cursor:pointer;font:.78rem 'DM Sans',sans-serif}
+.chk{accent-color:var(--accent);width:15px;height:15px;cursor:pointer}
+.sub-count{font-size:.75rem;color:var(--muted);margin-left:auto}
+.inline-chk{display:flex;align-items:center;gap:.4rem;font-size:.82rem;color:var(--muted);cursor:pointer;user-select:none}
 @media(max-width:900px){
   :root{--sidebar:0px;}
   .sidebar{display:none;}
@@ -249,6 +263,7 @@ tr:hover td{background:rgba(124,106,247,.03);}
           <div class="stat-card"><div class="stat-icon">📦</div><div class="stat-label">Products</div><div class="stat-value" id="stat-products">—</div><div class="stat-sub">Active listings</div></div>
           <div class="stat-card"><div class="stat-icon">👥</div><div class="stat-label">Customers</div><div class="stat-value" id="stat-users">—</div><div class="stat-sub">Registered</div></div>
         </div>
+        <div class="low-box ok" id="low-box"><div class="sec-title" style="margin-bottom:.5rem">⚠️ Low Stock</div><div id="low-list" style="color:var(--muted);font-size:.82rem">Checking stock...</div></div>
         <div style="display:grid;grid-template-columns:1fr 1fr;gap:1rem;">
           <div class="chart-wrap">
             <div class="sec-title">Monthly Revenue</div>
@@ -275,6 +290,9 @@ tr:hover td{background:rgba(124,106,247,.03);}
               <option>Electronics</option><option>Cameras</option><option>Fashion</option>
               <option>Sports</option><option>Beauty</option><option>Home & Office</option>
             </select>
+            <label class="inline-chk"><input type="checkbox" class="chk" onchange="toggleLowOnly(this.checked)"> Low stock only</label>
+            <button class="btn-danger" id="bulk-del" style="display:none" onclick="bulkDeleteProducts()">🗑 Delete selected (0)</button>
+            <span class="sub-count" id="prod-count"></span>
           </div>
           <div class="table-scroll">
             <div id="products-table"><div class="loading"><div class="spinner"></div>Loading products...</div></div>
@@ -287,15 +305,20 @@ tr:hover td{background:rgba(124,106,247,.03);}
         <div class="sec-header"><div class="sec-title">Orders</div></div>
         <div class="table-wrap">
           <div class="table-filters">
-            <select class="filter-select" onchange="filterOrders('status',this.value)">
+            <input type="text" class="search-input" id="ord-q" placeholder="🔍 Customer, email, phone or order #..." oninput="applyOrderFilters()">
+            <input type="date" class="search-input" id="ord-from" title="From date" onchange="applyOrderFilters()">
+            <input type="date" class="search-input" id="ord-to" title="To date" onchange="applyOrderFilters()">
+            <select class="filter-select" id="ord-status" onchange="filterOrders('status',this.value)">
               <option value="">All Statuses</option>
               <option>pending</option><option>processing</option><option>shipped</option>
               <option>delivered</option><option>cancelled</option>
             </select>
-            <select class="filter-select" onchange="filterOrders('paymentStatus',this.value)">
+            <select class="filter-select" id="ord-pay" onchange="filterOrders('paymentStatus',this.value)">
               <option value="">All Payments</option>
               <option>pending</option><option>paid</option><option>failed</option>
             </select>
+            <button class="btn-ghost" onclick="clearOrderFilters()">✕ Clear</button>
+            <span class="sub-count" id="ord-count"></span>
           </div>
           <div class="table-scroll">
             <div id="orders-table"><div class="loading"><div class="spinner"></div>Loading orders...</div></div>
@@ -461,6 +484,7 @@ function showPage(name, el) {
   el.classList.add('active');
   var titles = { dashboard:'Dashboard', products:'Products', orders:'Orders', users:'Customers' };
   document.getElementById('page-title').textContent = titles[name] || name;
+  if (name === 'dashboard') loadDashboard();
   if (name === 'products') loadProducts();
   if (name === 'orders')   loadOrders();
   if (name === 'users')    loadUsers();
@@ -479,6 +503,7 @@ async function loadDashboard() {
     document.getElementById('stat-users').textContent    = (d.stats && d.stats.totalUsers)    || 0;
     renderChart(d.monthlyRevenue || []);
     renderRecentOrders(d.recentOrders || []);
+    loadLowStock();
   } catch(e) { toast('Failed to load dashboard: ' + e.message, 'error'); }
 }
 
@@ -496,7 +521,7 @@ function renderRecentOrders(orders) {
   if (!orders.length) { el.innerHTML = '<div class="empty"><div class="empty-text">No orders yet</div></div>'; return; }
   el.innerHTML = '<table><thead><tr><th>Customer</th><th>Total</th><th>Status</th></tr></thead><tbody>' +
     orders.map(function(o) {
-      return '<tr><td>' + (o.user && o.user.name ? o.user.name : 'Guest') + '</td><td style="color:var(--accent);font-weight:700">KES ' + ((o.total||0)).toLocaleString() + '</td><td><span class="badge badge-' + o.status + '">' + o.status + '</span></td></tr>';
+      return '<tr><td>' + escHtml(o.user && o.user.name ? o.user.name : 'Guest') + '</td><td style="color:var(--accent);font-weight:700">KES ' + ((o.total||0)).toLocaleString() + '</td><td><span class="badge badge-' + o.status + '">' + o.status + '</span></td></tr>';
     }).join('') + '</tbody></table>';
 }
 
@@ -520,27 +545,44 @@ function escHtml(str) {
   return String(str||'').replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;').replace(/"/g,'&quot;').replace(/'/g,'&#39;');
 }
 
+var LOW_STOCK = 10;
+var selProducts = new Set(), visibleProducts = [], prodLowOnly = false;
+
+function stockTag(n) {
+  n = Number(n) || 0;
+  if (n <= 0) return '<span class="tag tag-out">Out</span>';
+  if (n < LOW_STOCK) return '<span class="tag tag-low">Low</span>';
+  return '';
+}
+
 function renderProducts(products) {
+  visibleProducts = products;
   const el = document.getElementById('products-table');
+  const cnt = document.getElementById('prod-count');
+  if (cnt) cnt.textContent = products.length === allProducts.length ? products.length + ' products' : products.length + ' of ' + allProducts.length;
   if (!products.length) {
-    el.innerHTML = '<div class="empty"><div class="empty-icon">📦</div><div class="empty-text">No products found. Add your first product!</div></div>';
+    el.innerHTML = '<div class="empty"><div class="empty-icon">📦</div><div class="empty-text">No products found.</div></div>';
+    updateBulkBar();
     return;
   }
-  el.innerHTML = '<table><thead><tr><th>Image</th><th>Name</th><th>Category</th><th>Price</th><th>Stock</th><th>Badge</th><th>Actions</th></tr></thead><tbody>' +
+  el.innerHTML = '<table><thead><tr><th style="width:34px"><input type="checkbox" class="chk" id="sel-all" title="Select all" onchange="toggleAllProds(this.checked)"></th><th>Image</th><th>Name</th><th>Category</th><th>Price</th><th>Stock</th><th>Badge</th><th>Actions</th></tr></thead><tbody>' +
     products.map(function(p) {
+      var id = escHtml(p._id);
       return '<tr>' +
+        '<td><input type="checkbox" class="chk" ' + (selProducts.has(p._id) ? 'checked ' : '') + 'onchange="toggleProd(\'' + id + '\',this.checked)"></td>' +
         '<td><img class="td-img" src="' + escHtml(p.image||'') + '" onerror="this.style.opacity=\'0\'"></td>' +
         '<td><div style="font-weight:600;font-size:.85rem">' + escHtml(p.name) + '</div></td>' +
         '<td><span style="color:var(--muted);font-size:.78rem">' + escHtml(p.category||'-') + '</span></td>' +
         '<td style="color:var(--accent);font-weight:700;white-space:nowrap">KES ' + (p.price||0).toLocaleString() + '</td>' +
-        '<td><span style="color:' + ((p.stock||0)<10?'var(--danger)':'var(--text)') + ';font-weight:600">' + (p.stock||0) + '</span></td>' +
+        '<td style="white-space:nowrap"><span style="color:' + ((p.stock||0)<LOW_STOCK?'var(--danger)':'var(--text)') + ';font-weight:600">' + (p.stock||0) + '</span>' + stockTag(p.stock) + '</td>' +
         '<td>' + (p.badge ? '<span class="badge badge-' + escHtml(p.badge.toLowerCase()) + '">' + escHtml(p.badge) + '</span>' : '-') + '</td>' +
         '<td style="white-space:nowrap">' +
-          '<button class="btn-edit" onclick="editProduct(\'' + escHtml(p._id) + '\')">✏️ Edit</button> ' +
-          '<button class="btn-danger" onclick="deleteProduct(\'' + escHtml(p._id) + '\',this)">🗑</button>' +
+          '<button class="btn-edit" onclick="editProduct(\'' + id + '\')">✏️ Edit</button> ' +
+          '<button class="btn-danger" onclick="deleteProduct(\'' + id + '\',this)">🗑</button>' +
         '</td>' +
       '</tr>';
     }).join('') + '</tbody></table>';
+  updateBulkBar();
 }
 
 var prodQuery = '', prodCat = '';
@@ -549,11 +591,71 @@ function applyProductFilters() {
   renderProducts(allProducts.filter(function(p) {
     const matchQ = !q || (p.name||'').toLowerCase().includes(q) || (p.description||'').toLowerCase().includes(q);
     const matchC = !prodCat || p.category === prodCat;
-    return matchQ && matchC;
+    const matchL = !prodLowOnly || (Number(p.stock)||0) < LOW_STOCK;
+    return matchQ && matchC && matchL;
   }));
 }
 function filterProducts(q) { prodQuery = q || ''; applyProductFilters(); }
 function filterProductsCat(cat) { prodCat = cat || ''; applyProductFilters(); }
+function toggleLowOnly(v) { prodLowOnly = !!v; applyProductFilters(); }
+
+// ---- Bulk select / delete ----
+function toggleProd(id, chk) { if (chk) selProducts.add(id); else selProducts.delete(id); updateBulkBar(); }
+function toggleAllProds(chk) {
+  visibleProducts.forEach(function(p) { if (chk) selProducts.add(p._id); else selProducts.delete(p._id); });
+  applyProductFilters();
+}
+function updateBulkBar() {
+  var n = selProducts.size, b = document.getElementById('bulk-del');
+  if (b) { b.style.display = n ? 'inline-block' : 'none'; b.textContent = '🗑 Delete selected (' + n + ')'; }
+  var all = document.getElementById('sel-all');
+  if (all) all.checked = visibleProducts.length > 0 && visibleProducts.every(function(p){ return selProducts.has(p._id); });
+}
+async function bulkDeleteProducts() {
+  var ids = Array.from(selProducts);
+  if (!ids.length) return;
+  if (!confirm('Delete ' + ids.length + ' selected product' + (ids.length > 1 ? 's' : '') + '? This cannot be undone.')) return;
+  var btn = document.getElementById('bulk-del');
+  btn.disabled = true; btn.textContent = '⏳ Deleting...';
+  var results = await Promise.allSettled(ids.map(function(id) {
+    return fetch(API + '/products/' + id, { method: 'DELETE', headers: { Authorization: 'Bearer ' + adminToken } })
+      .then(function(r) { if (r.status === 401) throw new Error('401'); if (!r.ok) throw new Error('fail'); return id; });
+  }));
+  var ok = [], failed = 0, expired = false;
+  results.forEach(function(res, i) {
+    if (res.status === 'fulfilled') ok.push(ids[i]);
+    else { failed++; if (res.reason && res.reason.message === '401') expired = true; }
+  });
+  btn.disabled = false;
+  if (expired) { doLogout(); return; }
+  allProducts = allProducts.filter(function(p) { return ok.indexOf(p._id) === -1; });
+  ok.forEach(function(id) { selProducts.delete(id); });
+  applyProductFilters();
+  loadLowStock();
+  toast(failed ? ('Deleted ' + ok.length + ', ' + failed + ' failed') : ('🗑 Deleted ' + ok.length + ' product' + (ok.length > 1 ? 's' : '')), failed ? 'error' : 'success');
+}
+
+// ---- Low stock (dashboard) ----
+async function loadLowStock() {
+  var box = document.getElementById('low-box'), list = document.getElementById('low-list');
+  if (!box || !list) return;
+  try {
+    var r = await fetch(API + '/products?limit=100', { headers: { Authorization: 'Bearer ' + adminToken } });
+    if (!r.ok) throw new Error('status ' + r.status);
+    var d = await r.json();
+    var prods = Array.isArray(d) ? d : (d.products || d.data || []);
+    allProducts = prods;
+    var low = prods.filter(function(p) { return (Number(p.stock) || 0) < LOW_STOCK; })
+                   .sort(function(a, b) { return (a.stock || 0) - (b.stock || 0); });
+    if (!low.length) { box.className = 'low-box ok'; list.innerHTML = '✅ All products are well stocked.'; return; }
+    box.className = 'low-box';
+    list.innerHTML = low.slice(0, 8).map(function(p) {
+      var out = (Number(p.stock) || 0) <= 0;
+      return '<div class="low-item" title="Click to edit" onclick="editProduct(\'' + escHtml(p._id) + '\')"><span class="low-name">' + escHtml(p.name) + '</span>' +
+        '<span class="tag ' + (out ? 'tag-out' : 'tag-low') + '">' + (out ? 'Out of stock' : p.stock + ' left') + '</span></div>';
+    }).join('') + (low.length > 8 ? '<div style="font-size:.75rem;color:var(--muted);padding-top:.4rem">+ ' + (low.length - 8) + ' more. Use "Low stock only" on the Products page.</div>' : '');
+  } catch (e) { list.textContent = 'Could not check stock right now.'; }
+}
 
 function openProductModal(product) {
   editingProductId = product ? product._id : null;
@@ -651,24 +753,27 @@ async function deleteProduct(id, btnEl) {
       throw new Error(d.message || 'Delete failed (status ' + r.status + ')');
     }
     allProducts = allProducts.filter(function(p){ return p._id !== id; });
-    renderProducts(allProducts);
+    selProducts.delete(id);
+    applyProductFilters();
+    loadLowStock();
     toast('🗑 Product deleted', 'success');
   } catch(e) { toast(e.message, 'error'); }
 }
 
 // ORDERS
+var ordFilters = { status: '', paymentStatus: '' };
 async function loadOrders(filters) {
-  filters = filters || {};
+  filters = filters || ordFilters;
   document.getElementById('orders-table').innerHTML = '<div class="loading"><div class="spinner"></div>Loading orders...</div>';
   try {
     var url = API + '/admin/orders?limit=50';
-    Object.keys(filters).forEach(function(k){ if(filters[k]) url += '&' + k + '=' + filters[k]; });
+    Object.keys(filters).forEach(function(k){ if(filters[k]) url += '&' + k + '=' + encodeURIComponent(filters[k]); });
     const r = await fetch(url, { headers: { Authorization: 'Bearer ' + adminToken } });
     if (r.status === 401) { doLogout(); return; }
     if (!r.ok) throw new Error('Failed to load orders (' + r.status + ')');
     const d = await r.json();
     allOrders = d.orders || d.data || [];
-    renderOrders(allOrders);
+    applyOrderFilters();
   } catch(e) {
     document.getElementById('orders-table').innerHTML = '<div class="empty"><div class="empty-icon">⚠️</div><div class="empty-text">' + e.message + '</div></div>';
     toast('Failed to load orders: ' + e.message, 'error');
@@ -676,8 +781,80 @@ async function loadOrders(filters) {
 }
 
 function filterOrders(key, val) {
-  var f = {}; f[key] = val;
-  loadOrders(f);
+  ordFilters[key] = val || '';
+  loadOrders();
+}
+
+function orderPhone(o) {
+  return String(o.phone || (o.shippingAddress && o.shippingAddress.phone) || (o.shipping && o.shipping.phone) || (o.user && o.user.phone) || '');
+}
+function findOrder(id) { return allOrders.find(function(o){ return o._id === id; }); }
+
+function applyOrderFilters() {
+  var q = (document.getElementById('ord-q').value || '').trim().toLowerCase().replace(/^#/, '');
+  var from = document.getElementById('ord-from').value, to = document.getElementById('ord-to').value;
+  var fromT = from ? new Date(from + 'T00:00:00').getTime() : null;
+  var toT   = to   ? new Date(to   + 'T23:59:59').getTime() : null;
+  var list = allOrders.filter(function(o) {
+    var t = new Date(o.createdAt).getTime();
+    if (fromT !== null && t < fromT) return false;
+    if (toT   !== null && t > toT)   return false;
+    if (!q) return true;
+    var hay = ((o._id || '') + ' ' + (o.user && o.user.name || '') + ' ' + (o.user && o.user.email || '') + ' ' + orderPhone(o)).toLowerCase();
+    return hay.indexOf(q) !== -1;
+  });
+  renderOrders(list);
+  var c = document.getElementById('ord-count');
+  if (c) c.textContent = list.length === allOrders.length ? list.length + ' orders' : list.length + ' of ' + allOrders.length;
+}
+
+function clearOrderFilters() {
+  ['ord-q','ord-from','ord-to'].forEach(function(id){ document.getElementById(id).value = ''; });
+  document.getElementById('ord-status').value = '';
+  document.getElementById('ord-pay').value = '';
+  ordFilters = { status: '', paymentStatus: '' };
+  loadOrders();
+}
+
+function whatsappOrder(id) {
+  var o = findOrder(id); if (!o) return;
+  var d = orderPhone(o).replace(/\D/g, '');
+  if (d.charAt(0) === '0') d = '254' + d.slice(1); else if (d.length === 9) d = '254' + d;
+  if (!d) { toast('No phone number on this order', 'error'); return; }
+  var name = (o.user && o.user.name) || 'there';
+  var msg = 'Hello ' + name + ', your NEXUS Store order #' + o._id.slice(-8) + ' is now ' + o.status + '. Total: KES ' + (o.total||0).toLocaleString() + '. Thank you for shopping with us!';
+  window.open('https://wa.me/' + d + '?text=' + encodeURIComponent(msg), '_blank', 'noopener');
+}
+
+function printInvoice(id) {
+  var o = findOrder(id); if (!o) return;
+  var w = window.open('', '_blank');
+  if (!w) { toast('Allow pop-ups to print the invoice', 'error'); return; }
+  var rows = (o.items || []).map(function(it) {
+    var name  = it.name || (it.product && it.product.name) || 'Item';
+    var qty   = Number(it.quantity || it.qty || 1);
+    var price = Number(it.price || (it.product && it.product.price) || 0);
+    return '<tr><td>' + escHtml(name) + '</td><td class="r">' + qty + '</td><td class="r">KES ' + price.toLocaleString() + '</td><td class="r">KES ' + (qty * price).toLocaleString() + '</td></tr>';
+  }).join('');
+  var cu = o.user || {};
+  var addr = o.shippingAddress || o.address || '';
+  if (addr && typeof addr === 'object') addr = Object.keys(addr).map(function(k){ return addr[k]; }).filter(Boolean).join(', ');
+  var html = '<!DOCTYPE html><html><head><meta charset="utf-8"><title>Invoice #' + escHtml(o._id.slice(-8)) + '</title><style>' +
+    'body{font-family:Arial,Helvetica,sans-serif;color:#111;max-width:760px;margin:30px auto;padding:0 20px}' +
+    'h1{margin:0;font-size:26px}.top{display:flex;justify-content:space-between;align-items:flex-start;border-bottom:2px solid #111;padding-bottom:14px;margin-bottom:18px}' +
+    '.meta{text-align:right;font-size:13px;line-height:1.6}.box{font-size:13px;line-height:1.6;margin-bottom:18px}' +
+    'table{width:100%;border-collapse:collapse;font-size:13px}th,td{padding:8px;border-bottom:1px solid #ddd;text-align:left}th{background:#f3f3f3}.r{text-align:right}' +
+    '.total{text-align:right;font-size:17px;font-weight:700;margin-top:14px}.foot{margin-top:40px;font-size:12px;color:#666;text-align:center}' +
+    '@media print{body{margin:0}}</style></head><body>' +
+    '<div class="top"><div><h1>NEXUS Store</h1><div style="font-size:13px;color:#555">Invoice</div></div>' +
+    '<div class="meta"><b>Invoice #' + escHtml(o._id.slice(-8)) + '</b><br>Date: ' + new Date(o.createdAt).toLocaleDateString() + '<br>Status: ' + escHtml(o.status) + '<br>Payment: ' + escHtml(o.paymentStatus) + '</div></div>' +
+    '<div class="box"><b>Bill to</b><br>' + escHtml(cu.name || 'Guest') + (cu.email ? '<br>' + escHtml(cu.email) : '') + (orderPhone(o) ? '<br>' + escHtml(orderPhone(o)) : '') + (addr ? '<br>' + escHtml(addr) : '') + '</div>' +
+    '<table><thead><tr><th>Item</th><th class="r">Qty</th><th class="r">Price</th><th class="r">Amount</th></tr></thead><tbody>' + (rows || '<tr><td colspan="4">No item details</td></tr>') + '</tbody></table>' +
+    '<div class="total">Total: KES ' + (o.total || 0).toLocaleString() + '</div>' +
+    '<div class="foot">Thank you for shopping with NEXUS Store</div></body></html>';
+  w.document.open(); w.document.write(html); w.document.close();
+  w.focus();
+  setTimeout(function(){ w.print(); }, 400);
 }
 
 function renderOrders(orders) {
@@ -687,13 +864,13 @@ function renderOrders(orders) {
     orders.map(function(o) {
       return '<tr>' +
         '<td><span style="font-family:monospace;font-size:.75rem;color:var(--muted)">#' + o._id.slice(-8) + '</span></td>' +
-        '<td><div style="font-weight:600">' + (o.user && o.user.name ? o.user.name : 'Guest') + '</div><div style="font-size:.72rem;color:var(--muted)">' + (o.user && o.user.email ? o.user.email : '') + '</div></td>' +
+        '<td><div style="font-weight:600">' + escHtml(o.user && o.user.name ? o.user.name : 'Guest') + '</div><div style="font-size:.72rem;color:var(--muted)">' + escHtml(o.user && o.user.email ? o.user.email : '') + '</div></td>' +
         '<td>' + (o.items ? o.items.length : 0) + ' items</td>' +
         '<td style="color:var(--accent);font-weight:700;white-space:nowrap">KES ' + (o.total||0).toLocaleString() + '</td>' +
         '<td><span class="badge badge-' + o.paymentStatus + '">' + o.paymentStatus + '</span></td>' +
         '<td><span class="badge badge-' + o.status + '">' + o.status + '</span></td>' +
         '<td style="font-size:.75rem;color:var(--muted);white-space:nowrap">' + new Date(o.createdAt).toLocaleDateString() + '</td>' +
-        '<td><button class="btn-edit" onclick="openOrderModal(\'' + o._id + '\',\'' + o.status + '\',\'' + o.paymentStatus + '\')">✏️ Update</button></td>' +
+        '<td><button class="btn-edit" onclick="openOrderModal(\'' + o._id + '\',\'' + o.status + '\',\'' + o.paymentStatus + '\')">✏️ Update</button> <button class="btn-ghost" title="Print invoice" onclick="printInvoice(\'' + o._id + '\')">🖨</button>' + (orderPhone(o) ? ' <button class="btn-wa" title="Message on WhatsApp" onclick="whatsappOrder(\'' + o._id + '\')">💬</button>' : '') + '</td>' +
       '</tr>';
     }).join('') + '</tbody></table>';
 }
