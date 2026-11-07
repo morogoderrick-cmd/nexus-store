@@ -364,7 +364,9 @@ tr:hover td{background:rgba(124,106,247,.03);}
 
 <script>
 const API = 'https://nexus-store-api.onrender.com/api';
-let adminToken = localStorage.getItem('nexus_admin_token') || '';
+// Token is kept in memory only: no auto-login, refreshing the page returns to the login screen
+let adminToken = '';
+try { localStorage.removeItem('nexus_admin_token'); } catch(_) {}
 let editingProductId = null;
 let editingProductImage = '';
 let allProducts = [];
@@ -389,7 +391,6 @@ async function doLogin() {
     const d = await r.json();
     if (!r.ok) throw new Error(d.message || 'Login failed');
     adminToken = d.token;
-    localStorage.setItem('nexus_admin_token', adminToken);
     try {
       if (document.getElementById('remember-me').checked) localStorage.setItem('nexus_admin_email', email);
       else localStorage.removeItem('nexus_admin_email');
@@ -451,7 +452,6 @@ document.querySelectorAll('.modal-overlay').forEach(function(m) {
   m.addEventListener('mousedown', function(e) { if (e.target === m) m.classList.remove('open'); });
 });
 
-if (adminToken) { showAdmin(); }
 
 // NAVIGATION
 function showPage(name, el) {
