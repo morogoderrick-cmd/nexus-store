@@ -64,3 +64,4 @@ const getSale=()=>{const x=LS.get('nexus_sale',null);return x&&x.active&&new Dat
 const salePrice=p=>{const x=getSale();return x&&(x.cat==='All'||x.cat===p.cat)?Math.round(p.price*(1-x.pct/100)):p.price};
 const priceHTML=p=>{const n=salePrice(p);return n<p.price?`KES ${n.toLocaleString()} <s style="font-size:.7rem;color:var(--mt)">${p.price.toLocaleString()}</s>`:`KES ${p.price.toLocaleString()}`};
 
+
