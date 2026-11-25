@@ -1,7 +1,6 @@
 /* NEXUS shared data — used by index.html and admin.html */
 const LS={get:(k,d)=>{try{const v=JSON.parse(localStorage.getItem(k));return v==null?d:v}catch(e){return d}},set:(k,v)=>{try{localStorage.setItem(k,JSON.stringify(v));return true}catch(e){alert('Browser storage is full — use smaller photos.');return false}}};
 const SEED=[
-  
   {id:1,name:'Smart Watch Ultra Pro',cat:'Electronics',price:8500,stock:15,rating:4.8,reviews:214,badge:'Hot',desc:'Square dial smart watch with heart rate monitoring, sleep tracking, alarm and multi-sport modes. Compatible with Android & iPhone.',img:"images/watch1.jpg"},
   {id:2,name:'Amazfit GTS Smartwatch',cat:'Electronics',price:12500,stock:10,rating:4.9,reviews:189,badge:'New',desc:'Premium AMOLED smartwatch with GPS, 14-day battery life and advanced health tracking.',img:"images/amazfit.jpg"},
   {id:3,name:'Samsung Galaxy Watch 6',cat:'Electronics',price:22000,stock:8,rating:4.9,reviews:95,badge:'New',desc:'Samsung Galaxy Watch 6 with round face, health suite, sleep coaching and Samsung Pay.',img:"images/samsung.jpg"},
